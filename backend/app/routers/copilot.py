@@ -1,80 +1,19 @@
-# from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-# from typing import Optional
-
-# from app.agents.langgraph_agent import run_extraction, run_correction
-# from app.services.pdf_service import extract_text_from_upload
-# from app.schemas.complaint import (
-#     CopilotParseResponse, CopilotChatRequest, CopilotChatResponse,
-#     ExtractedFields, RiskAssessment, BonusInsights,
-# )
-
-# router = APIRouter(prefix="/api/copilot", tags=["copilot"])
-
-
-# @router.post("/parse", response_model=CopilotParseResponse)
-# async def parse_complaint(
-#     text: Optional[str] = Form(None),
-#     file: Optional[UploadFile] = File(None),
-# ):
-#     """
-#     Accepts EITHER pasted text/email OR an uploaded PDF/email/txt file
-#     (matches the two intake modes in the reference UI: "paste text" and
-#     "drop complaint files"). Runs the LangGraph extraction workflow and
-#     returns form fields + AI risk assessment + bonus insights.
-#     """
-#     if not text and not file:
-#         raise HTTPException(400, "Provide either 'text' or a 'file'.")
-
-#     if file:
-#         raw_bytes = await file.read()
-#         raw_text = extract_text_from_upload(file.filename, raw_bytes)
-#     else:
-#         raw_text = text
-
-#     if not raw_text or not raw_text.strip():
-#         raise HTTPException(422, "Could not read any text from the input.")
-
-#     result = run_extraction(raw_text)
-#     return CopilotParseResponse(
-#         reply=result["reply"],
-#         fields=ExtractedFields(**result["fields"]),
-#         risk=RiskAssessment(**result["risk"]),
-#         bonus=BonusInsights(**result["bonus"]),
-#     )
-
-
-# @router.post("/chat", response_model=CopilotChatResponse)
-# async def chat_correction(payload: CopilotChatRequest):
-#     """
-#     Conversational corrections after the initial parse, e.g.
-#     "ah sorry the batch number is BMX240602 and affected quantity is 48 capsules"
-#     -> only the mentioned fields are updated, matching the demo video flow.
-#     """
-#     result = run_correction(payload.message, payload.current_fields)
-#     return CopilotChatResponse(
-#         reply=result["reply"],
-#         updated_fields=ExtractedFields(**result["updated_fields"]),
-#         changed_keys=result["changed_keys"],
-#     )
-
-
-
-
 
 # from typing import Optional
 
-# from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+# from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-# from app.agents.langgraph_agent import run_extraction, run_correction
-# from app.services.pdf_service import extract_text_from_upload
+# from app.agents.langgraph_agent import run_correction, run_extraction
 # from app.schemas.complaint import (
-#     CopilotParseResponse,
+#     BonusInsights,
 #     CopilotChatRequest,
 #     CopilotChatResponse,
+#     CopilotParseResponse,
 #     ExtractedFields,
 #     RiskAssessment,
-#     BonusInsights,
 # )
+# from app.services.pdf_service import extract_text_from_upload
+
 
 # router = APIRouter(
 #     prefix="/api/copilot",
@@ -87,23 +26,39 @@
 #     text: Optional[str] = Form(None),
 #     file: Optional[UploadFile] = File(None),
 # ):
+#     """
+#     Accept pasted complaint text or an uploaded complaint file.
 
-#     if text is None and file is None:
+#     The complaint is processed by the LangGraph extraction workflow,
+#     which returns extracted fields, risk assessment, and bonus insights.
+#     """
+
+#     if not text and not file:
 #         raise HTTPException(
 #             status_code=400,
-#             detail="Provide either text or file."
+#             detail="Provide either 'text' or a 'file'.",
 #         )
 
 #     if file:
 #         raw_bytes = await file.read()
-#         raw_text = extract_text_from_upload(file.filename, raw_bytes)
+
+#         if not raw_bytes:
+#             raise HTTPException(
+#                 status_code=422,
+#                 detail="The uploaded file is empty.",
+#             )
+
+#         raw_text = extract_text_from_upload(
+#             file.filename or "",
+#             raw_bytes,
+#         )
 #     else:
 #         raw_text = text
 
 #     if not raw_text or not raw_text.strip():
 #         raise HTTPException(
 #             status_code=422,
-#             detail="Could not extract any text."
+#             detail="Could not read any text from the input.",
 #         )
 
 #     result = run_extraction(raw_text)
@@ -117,7 +72,15 @@
 
 
 # @router.post("/chat", response_model=CopilotChatResponse)
-# async def chat(payload: CopilotChatRequest):
+# async def chat_correction(payload: CopilotChatRequest):
+#     """
+#     Processes conversational corrections after the initial complaint parse.
+
+#     Example:
+#         "The batch number is BMX240602 and affected quantity is 48 capsules."
+
+#     Only the fields identified by the correction workflow are updated.
+#     """
 
 #     result = run_correction(
 #         payload.message,
@@ -125,14 +88,27 @@
 #     )
 
 #     return CopilotChatResponse(
+#         reply=result["reply"],
+#         updated_fields=ExtractedFields(**result["updated_fields"]),
+#         changed_keys=result["changed_keys"],
+#     )
 
 
 
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
 
-from app.agents.langgraph_agent import run_correction, run_extraction
+from app.agents.langgraph_agent import (
+    run_correction,
+    run_extraction,
+)
 from app.schemas.complaint import (
     BonusInsights,
     CopilotChatRequest,
@@ -141,7 +117,9 @@ from app.schemas.complaint import (
     ExtractedFields,
     RiskAssessment,
 )
-from app.services.pdf_service import extract_text_from_upload
+from app.services.pdf_service import (
+    extract_text_from_upload,
+)
 
 
 router = APIRouter(
@@ -150,25 +128,34 @@ router = APIRouter(
 )
 
 
-@router.post("/parse", response_model=CopilotParseResponse)
+@router.post(
+    "/parse",
+    response_model=CopilotParseResponse,
+)
 async def parse_complaint(
-    text: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None),
+    text: Optional[str] = Form(default=None),
+    file: Optional[UploadFile] = File(default=None),
 ):
     """
-    Accept pasted complaint text or an uploaded complaint file.
+    Parse a new customer complaint.
 
-    The complaint is processed by the LangGraph extraction workflow,
-    which returns extracted fields, risk assessment, and bonus insights.
+    Input can be either:
+    - pasted complaint text, or
+    - an uploaded complaint file.
+
+    The extracted complaint is processed through the
+    LangGraph extraction workflow.
     """
 
+    # Require either text or file.
     if not text and not file:
         raise HTTPException(
             status_code=400,
             detail="Provide either 'text' or a 'file'.",
         )
 
-    if file:
+    # Extract text from uploaded file.
+    if file is not None:
         raw_bytes = await file.read()
 
         if not raw_bytes:
@@ -181,43 +168,101 @@ async def parse_complaint(
             file.filename or "",
             raw_bytes,
         )
+
+    # Use pasted text.
     else:
         raw_text = text
 
+    # Validate extracted text.
     if not raw_text or not raw_text.strip():
         raise HTTPException(
             status_code=422,
             detail="Could not read any text from the input.",
         )
 
-    result = run_extraction(raw_text)
+    # Run AI extraction.
+    try:
+        result = run_extraction(
+            raw_text.strip()
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Complaint extraction failed: {str(exc)}",
+        ) from exc
 
-    return CopilotParseResponse(
-        reply=result["reply"],
-        fields=ExtractedFields(**result["fields"]),
-        risk=RiskAssessment(**result["risk"]),
-        bonus=BonusInsights(**result["bonus"]),
-    )
+    # Validate AI result.
+    if not isinstance(result, dict):
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid response from the extraction workflow.",
+        )
+
+    try:
+        return CopilotParseResponse(
+            reply=result.get("reply", ""),
+            fields=ExtractedFields(
+                **result.get("fields", {})
+            ),
+            risk=RiskAssessment(
+                **result.get("risk", {})
+            ),
+            bonus=BonusInsights(
+                **result.get("bonus", {})
+            ),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not format extraction result: {str(exc)}",
+        ) from exc
 
 
-@router.post("/chat", response_model=CopilotChatResponse)
-async def chat_correction(payload: CopilotChatRequest):
+@router.post(
+    "/chat",
+    response_model=CopilotChatResponse,
+)
+async def chat_correction(
+    payload: CopilotChatRequest,
+):
     """
-    Processes conversational corrections after the initial complaint parse.
-
-    Example:
-        "The batch number is BMX240602 and affected quantity is 48 capsules."
-
-    Only the fields identified by the correction workflow are updated.
+    Process a conversational correction to the
+    previously extracted complaint fields.
     """
 
-    result = run_correction(
-        payload.message,
-        payload.current_fields,
-    )
+    if not payload.message or not payload.message.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Correction message cannot be empty.",
+        )
 
-    return CopilotChatResponse(
-        reply=result["reply"],
-        updated_fields=ExtractedFields(**result["updated_fields"]),
-        changed_keys=result["changed_keys"],
-    )
+    try:
+        result = run_correction(
+            payload.message.strip(),
+            payload.current_fields,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Complaint correction failed: {str(exc)}",
+        ) from exc
+
+    if not isinstance(result, dict):
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid response from the correction workflow.",
+        )
+
+    try:
+        return CopilotChatResponse(
+            reply=result.get("reply", ""),
+            updated_fields=ExtractedFields(
+                **result.get("updated_fields", {})
+            ),
+            changed_keys=result.get("changed_keys", []),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not format correction result: {str(exc)}",
+        ) from exc

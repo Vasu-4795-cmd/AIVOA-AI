@@ -52,42 +52,158 @@
 
 
 
+# import logging
+
+# from fastapi import FastAPI
+# from fastapi.middleware.cors import CORSMiddleware
+
+# from app.config import get_settings
+# from app.database import Base, engine
+# from app.routers import copilot, complaints
+# from app.models import complaint  # noqa: F401 -- ensures model is registered before create_all
+
+# logging.basicConfig(level=logging.INFO)
+# settings = get_settings()
+
+# app = FastAPI(
+#     title="AIVOA Customer Complaint Management API",
+#     description="AI-powered pharmaceutical customer complaint intake, triage, and QMS logging.",
+#     version="1.0.0",
+# )
+
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=settings.cors_origin_list,
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
+
+# app.include_router(copilot.router)
+# app.include_router(complaints.router)
+
+
+# @app.on_event("startup")
+# def on_startup():
+#     Base.metadata.create_all(bind=engine)
+
+
+# @app.get("/api/health")
+# def health():
+#     return {"status": "ok", "groq_enabled": settings.groq_enabled}
+
+
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import Base, engine
-from app.routers import copilot, complaints
-from app.models import complaint  # noqa: F401 -- ensures model is registered before create_all
+from app.models import complaint  # noqa: F401
+from app.routers import complaints, copilot
 
-logging.basicConfig(level=logging.INFO)
+
+# ---------------------------------------------------------
+# Logging
+# ---------------------------------------------------------
+
+logging.basicConfig(
+    level=logging.INFO,
+)
+
+logger = logging.getLogger(__name__)
+
 settings = get_settings()
+
+
+# ---------------------------------------------------------
+# Application startup / shutdown
+# ---------------------------------------------------------
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application startup and shutdown lifecycle.
+    """
+
+    logger.info("Starting AIVOA Customer Complaint Management API")
+
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables initialized successfully")
+    except Exception as exc:
+        logger.exception(
+            "Database initialization failed: %s",
+            exc,
+        )
+
+    yield
+
+    logger.info("Shutting down AIVOA API")
+
+
+# ---------------------------------------------------------
+# FastAPI Application
+# ---------------------------------------------------------
 
 app = FastAPI(
     title="AIVOA Customer Complaint Management API",
-    description="AI-powered pharmaceutical customer complaint intake, triage, and QMS logging.",
+    description=(
+        "AI-powered pharmaceutical customer complaint "
+        "intake, triage, and QMS logging."
+    ),
     version="1.0.0",
+    lifespan=lifespan,
 )
+
+
+# ---------------------------------------------------------
+# CORS
+# ---------------------------------------------------------
+
+cors_origins = settings.cors_origin_list
+
+# Allow the configured origins.
+# If no origins are configured, allow the local Vite
+# development server so local frontend development works.
+if not cors_origins:
+    cors_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
+# ---------------------------------------------------------
+# Routers
+# ---------------------------------------------------------
+
 app.include_router(copilot.router)
 app.include_router(complaints.router)
 
 
-@app.on_event("startup")
-def on_startup():
-    Base.metadata.create_all(bind=engine)
-
+# ---------------------------------------------------------
+# Health Check
+# ---------------------------------------------------------
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "groq_enabled": settings.groq_enabled}
+    """
+    Health-check endpoint used to verify that the
+    FastAPI backend is running.
+    """
+
+    return {
+        "status": "ok",
+        "groq_enabled": settings.groq_enabled,
+    }

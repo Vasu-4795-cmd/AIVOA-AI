@@ -5,4 +5,9 @@ const api = axios.create({
   timeout: 30000,
 })
 
+axios.post(
+    `${import.meta.env.VITE_API_URL}/api/copilot/parse`,
+    formData
+);
+
 export default api
