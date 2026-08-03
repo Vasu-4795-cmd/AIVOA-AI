@@ -1,0 +1,32 @@
+databases:
+  - name: aivoa-db
+    plan: free
+    databaseName: aivoa_complaints
+    user: aivoa_user
+
+services:
+  - type: web
+    name: aivoa-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aivoa-db
+          property: connectionString
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_EXTRACTION_MODEL
+        value: gemma2-9b-it
+      - key: GROQ_CONTEXT_MODEL
+        value: llama-3.3-70b-versatile
+      - key: APP_ENV
+        value: production
+      - key: CORS_ORIGINS
+        value: https://your-vercel-app.vercel.app
+      - key: PYTHON_VERSION
+        value: 3.11.9
